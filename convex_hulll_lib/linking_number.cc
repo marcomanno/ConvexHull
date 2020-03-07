@@ -75,16 +75,13 @@ int LinkingNumber::compute(
     {
       p[1][1] = q1;
       auto cc_l = contribution1(p);
-      std::cout << " " << cc_l;
       cc += cc_l;
       p[1][0] = p[1][1];
     }
-    std::cout << std::endl << cc << std::endl;
     link_numb += cc;
     p[0][0] = p[0][1];
   }
   link_numb /= 4 * M_PI;
-  std::cout << "link_numb = " << link_numb << std::endl;
   return static_cast<int>(std::round(link_numb));
 }
 

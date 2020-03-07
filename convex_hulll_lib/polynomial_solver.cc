@@ -1,5 +1,4 @@
 #include "polynomial_solver.hh"
-#include <Eigen/Dense>
 
 
 namespace Geo {

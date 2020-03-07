@@ -33,9 +33,29 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClInclude Include="..\convex_hulll_lib\area.hh" />
+    <ClInclude Include="..\convex_hulll_lib\combinations.hh" />
+    <ClInclude Include="..\convex_hulll_lib\CPointHull.h" />
+    <ClInclude Include="..\convex_hulll_lib\evalnurbs.hh" />
+    <ClInclude Include="..\convex_hulll_lib\geo_function.hh" />
+    <ClInclude Include="..\convex_hulll_lib\geo_nrbs_curve.hh" />
+    <ClInclude Include="..\convex_hulll_lib\iterate.hh" />
+    <ClInclude Include="..\convex_hulll_lib\kdtree.hh" />
+    <ClInclude Include="..\convex_hulll_lib\linear_system.hh" />
+    <ClInclude Include="..\convex_hulll_lib\linking_number.hh" />
+    <ClInclude Include="..\convex_hulll_lib\minsphere.hh" />
+    <ClInclude Include="..\convex_hulll_lib\pow.hh" />
+    <ClInclude Include="..\convex_hulll_lib\range.hh" />
+    <ClInclude Include="..\convex_hulll_lib\tolerance.hh" />
+    <ClInclude Include="..\convex_hulll_lib\vector.hh" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\convex_hulll_lib\area.cc" />
+    <ClCompile Include="..\convex_hulll_lib\CPointHull.cpp" />
+    <ClCompile Include="..\convex_hulll_lib\linear_system.cc" />
+    <ClCompile Include="..\convex_hulll_lib\linking_number.cc" />
+    <ClCompile Include="..\convex_hulll_lib\make_curve.cc" />
     <ClCompile Include="test.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -46,11 +66,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\convex_hulll_lib\convex_hulll_lib.vcxproj">
-      <Project>{8ba07bb0-363b-4e34-a98a-58e969b8c60b}</Project>
-    </ProjectReference>
   </ItemGroup>
   <ItemDefinitionGroup />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
@@ -74,13 +89,15 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>X64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>X64;_USE_MATH_DEFINES;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -107,10 +124,12 @@
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <PreprocessorDefinitions>X64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>X64;_USE_MATH_DEFINES;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
