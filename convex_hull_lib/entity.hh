@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Geo/vector.hh"
+#include "vector.hh"
 
 #include <array>
 #include <memory>

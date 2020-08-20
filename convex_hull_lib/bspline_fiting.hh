@@ -1,6 +1,8 @@
-#include <Geo/vector.hh>
-#include <memory>
+#pragma once
 
+#include "vector.hh"
+
+#include <memory>
 #include <vector>
 
 namespace Geo {

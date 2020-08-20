@@ -1,6 +1,8 @@
-#include "pch.h"
 
-#include "../convex_hulll_lib/CPointHull.h"
+#include "../convex_hull_lib/point_hull.hh"
+
+#include "gtest_wrapper.hpp"
+
 
 #include <string>
 

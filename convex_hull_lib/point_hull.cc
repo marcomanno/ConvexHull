@@ -1,5 +1,9 @@
-#include "CPointHull.h"
+#include "point_hull.hh"
+
 #include <fstream>
+#include <algorithm>
+
+static const size_t INVALID = std::numeric_limits<size_t>::max();
 
 struct Evaluator {
   Evaluator(const Geo::VectorD3 &_mid_pt0, const Geo::VectorD3 &_mid_pt1,
@@ -20,7 +24,7 @@ struct Evaluator {
     auto pt_to_ref = _pt_pl - _ref;
     auto cen_to_ref = m_center - _ref;
     auto sin_a = (pt_to_ref % cen_to_ref)[m_split_coord];
-    if (sin_a <= 0) // Check the rotation is positive.
+    if (sin_a < 0) // Check the rotation is jot negative.
       return -1;
     auto cos_a = pt_to_ref * cen_to_ref;
     return atan2(sin_a, cos_a);
@@ -43,12 +47,13 @@ struct Evaluator {
 };
 
 Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
-  size_t i0 = 0, i1 = 0;
+  using Link = std::array<size_t, 2>;
+  Link link{};
   Geo::VectorD3 p_mid_plane;
   Evaluator ev(m[0]->m_box.mid(), m[1]->m_box.mid(), split_coord, split_val);
   {
-    auto best_val = ev.evaluate(m[0]->m_vert_conn[i0].m_pt,
-                                m[1]->m_vert_conn[i1].m_pt, p_mid_plane);
+    auto best_val = ev.evaluate(m[0]->m_vert_conn[link[0]].m_pt,
+                                m[1]->m_vert_conn[link[1]].m_pt, p_mid_plane);
     bool a_change;
     do {
       a_change = false;
@@ -67,15 +72,16 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
           }
         }
       };
-      advance(m[0], m[1], i0, i1);
-      advance(m[1], m[0], i1, i0);
+      advance(m[0], m[1], link[0], link[1]);
+      advance(m[1], m[0], link[1], link[0]);
     } while (a_change);
   }
-  std::vector<std::array<size_t, 2>> new_links;
-  new_links.push_back({i0, i1});
-  do {
+  std::vector<Link> new_links;
+  new_links.push_back(link);
+  for (;;)
+  {
     double big_angle_new = -1;
-    size_t i0_new = i0, i1_new = i1;
+    Link link_new = link;
     Geo::VectorD3 p_mid_plane_new;
     auto advance = [&p_mid_plane, &big_angle_new, &ev, &p_mid_plane_new](
                        Mesh *_m0, Mesh *_m1, size_t _i0, size_t _i1,
@@ -93,13 +99,14 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
         }
       }
     };
-    advance(m[0], m[1], i0, i1, i0_new, i1_new);
-    advance(m[1], m[0], i1, i0, i1_new, i0_new);
-    i0 = i0_new;
-    i1 = i1_new;
+    advance(m[0], m[1], link[0], link[1], link_new[0], link_new[1]);
+    advance(m[1], m[0], link[1], link[0], link_new[1], link_new[0]);
+    if (link == link_new || new_links.front() == link_new)
+      break;
+    link = link_new;
     p_mid_plane = p_mid_plane_new;
-    new_links.push_back({i0, i1});
-  } while (new_links.back() != new_links.front());
+    new_links.push_back(link);
+  }
   auto flag_on_boundary = [&new_links, m](bool set_true) {
     for (const auto &inds : new_links) {
       m[1]->m_vert_conn[inds[1]].m_boundary =
@@ -181,10 +188,10 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
   m[0]->m_box += m[1]->m_box;
   m[0]->m_vert_conn.insert(m[0]->m_vert_conn.end(), m[1]->m_vert_conn.begin(),
                            m[1]->m_vert_conn.end());
-  for (auto &link : new_links) {
-    link[1] += shif_index;
-    m[0]->m_vert_conn[link[0]].m_adj_idx.push_back(link[1]);
-    m[0]->m_vert_conn[link[1]].m_adj_idx.push_back(link[0]);
+  for (auto &new_link : new_links) {
+    new_link[1] += shif_index;
+    m[0]->m_vert_conn[new_link[0]].m_adj_idx.push_back(new_link[1]);
+    m[0]->m_vert_conn[new_link[1]].m_adj_idx.push_back(new_link[0]);
   }
   // Add the new faces to m[0];
   delete m[1];
@@ -193,7 +200,7 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
 
 Mesh *make_convex_hull(Points::iterator _begin, Points::iterator _end) {
   auto size = _end - _begin;
-  if (size <= 4) {
+  if (size <= 3) {
     auto m = new Mesh;
     for (auto i = 0; i < size; ++i) {
       auto &el = m->m_vert_conn.emplace_back();
@@ -220,7 +227,8 @@ Mesh *make_convex_hull(Points::iterator _begin, Points::iterator _end) {
       split_coord = i;
     }
   }
-  std::sort(_begin, _end,
+  std::nth_element(
+      _begin, _begin + size / 2, _end,
             [split_coord](const Geo::VectorD3 &_a, const Geo::VectorD3 &_b) {
               return _a[split_coord] < _b[split_coord];
             });
@@ -244,7 +252,7 @@ void Mesh::compact() {
   std::vector<MeshVertex> new_data;
   for (size_t i = 0; i < size; ++i) {
     if (m_vert_conn[i].m_to_del)
-      ind_map[i] = -1;
+      ind_map[i] = INVALID;
     else {
       new_data.emplace_back(m_vert_conn[i]);
       ind_map[i] = valid_ind++;
@@ -278,10 +286,14 @@ void Mesh::save(const char *_flnm) {
   std::vector<size_t> third_verts;
   for (ff[0] = 0; ff[0] < m_vert_conn.size(); ++ff[0]) {
     for (auto id : m_vert_conn[ff[0]].m_adj_idx) {
+      if (id <= ff[0])
+        continue;
       ff[1] = id;
       common_element(m_vert_conn[ff[0]].m_adj_idx, m_vert_conn[ff[1]].m_adj_idx,
                      third_verts);
       for (auto id2 : third_verts) {
+        if (id2 <= ff[1])
+          continue;
         ff[2] = id2;
         std::sort(ff.begin(), ff.end());
         all_faces.push_back(ff);
@@ -290,7 +302,7 @@ void Mesh::save(const char *_flnm) {
   }
   std::sort(all_faces.begin(), all_faces.end());
   auto last = std::unique(all_faces.begin(), all_faces.end());
-  all_faces.erase(all_faces.begin(), last);
+  all_faces.erase(last, all_faces.end());
   for (auto &f : all_faces) {
     cc << "f " << f[0] << ' ' << f[1] << ' ' << f[2] << std::endl;
   }

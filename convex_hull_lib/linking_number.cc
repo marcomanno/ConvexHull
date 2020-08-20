@@ -1,6 +1,8 @@
 
 #include "linking_number.hh"
 
+#include <iostream>
+
 namespace Geo
 {
 namespace {
