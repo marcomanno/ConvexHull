@@ -1,7 +1,9 @@
 #include "point_hull.hh"
 
-#include <fstream>
 #include <algorithm>
+#include <fstream>
+#include <set>
+#include <string>
 
 static const size_t INVALID = std::numeric_limits<size_t>::max();
 
@@ -32,12 +34,12 @@ struct Evaluator {
 
   Geo::VectorD3 get_center_point(const Geo::VectorD3 &_pt0,
                                  const Geo::VectorD3 &_pt1) {
-
-    double c = (m_split_val - _pt0[m_split_coord]) /
-               (_pt1[m_split_coord] - _pt0[m_split_coord]);
+    auto delta = _pt1[m_split_coord] - _pt0[m_split_coord];
+    double c = 0.5; 
+    if (fabs(delta) > 1e-16)
+      c = (m_split_val - _pt0[m_split_coord]) / delta;
     Geo::VectorD3 center_pt;
-    for (size_t i = 0; i < 3; ++i)
-      center_pt[i] = (1 - c) * _pt0[i] + c * _pt1[i];
+    center_pt = (1 - c) * _pt0 + c * _pt1;
     return center_pt;
   }
 
@@ -45,6 +47,27 @@ struct Evaluator {
   double m_split_val;
   Geo::VectorD3 m_center;
 };
+
+static void replace_vertex(const Mesh *mm, size_t v0, size_t v1, size_t oth,
+                           std::array<size_t, 2> &adj) {
+  const auto& orig = mm->m_vert_conn[v0].m_pt;
+  auto dir = mm->m_vert_conn[v1].m_pt - orig;
+  dir /= Geo::length(dir);
+  auto find_dir = [mm, &orig, &dir](size_t v) {
+    auto res = mm->m_vert_conn[v].m_pt - orig;
+    return res - (res * dir) * dir;
+  };
+  auto adj0 = find_dir(adj[0]);
+  auto adj1 = find_dir(adj[1]);
+  auto oth_v = find_dir(oth);
+  auto angle_ref = fabs(Geo::angle(adj0, adj1));
+  auto angle_0 = fabs(Geo::angle(adj0, oth_v));
+  auto angle_1 = fabs(Geo::angle(adj1, oth_v));
+  if (angle_0 > angle_1 && angle_0 > angle_ref)
+    adj[0] = oth;
+  else if (angle_1 > angle_0 && angle_1 > angle_ref)
+    adj[1] = oth;
+}
 
 Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
   using Link = std::array<size_t, 2>;
@@ -78,15 +101,17 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
   }
   std::vector<Link> new_links;
   new_links.push_back(link);
-  for (;;)
-  {
+  Link link_prev{INVALID, INVALID};
+  for (;;) {
     double big_angle_new = -1;
     Link link_new = link;
     Geo::VectorD3 p_mid_plane_new;
     auto advance = [&p_mid_plane, &big_angle_new, &ev, &p_mid_plane_new](
                        Mesh *_m0, Mesh *_m1, size_t _i0, size_t _i1,
-                       size_t &_i0_new, size_t &_i1_new) {
+                       size_t &_i0_new, size_t &_i1_new, const size_t &_used) {
       for (auto i0_1 : _m0->m_vert_conn[_i0].m_adj_idx) {
+        if (_used == i0_1)
+          continue;
         Geo::VectorD3 p_mid_plane_1;
         auto big_angle_1 = ev.evaluate_angle(_m0->m_vert_conn[i0_1].m_pt,
                                              _m1->m_vert_conn[_i1].m_pt,
@@ -99,13 +124,19 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
         }
       }
     };
-    advance(m[0], m[1], link[0], link[1], link_new[0], link_new[1]);
-    advance(m[1], m[0], link[1], link[0], link_new[1], link_new[0]);
+    advance(m[0], m[1], link[0], link[1], link_new[0], link_new[1],
+            link_prev[0]);
+    advance(m[1], m[0], link[1], link[0], link_new[1], link_new[0],
+            link_prev[1]);
     if (link == link_new || new_links.front() == link_new)
       break;
+    for (auto j : {0, 1}) {
+      if (link_new[j] != link[j])
+        link_prev[j] = link[j];
+    }
     link = link_new;
-    p_mid_plane = p_mid_plane_new;
     new_links.push_back(link);
+    p_mid_plane = p_mid_plane_new;
   }
   auto flag_on_boundary = [&new_links, m](bool set_true) {
     for (const auto &inds : new_links) {
@@ -134,9 +165,10 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
     for (auto oth0 : mm->m_vert_conn[v0].m_adj_idx) {
       for (auto oth1 : mm->m_vert_conn[v1].m_adj_idx) {
         if (oth0 == oth1) {
-          if (cmn_verts == 2)
-            throw "Too many common vertices";
-          adj[cmn_verts++] = oth1;
+          if (cmn_verts < 2)
+            adj[cmn_verts++] = oth1;
+          else
+            replace_vertex(mm, v0, v1, oth1, adj);
         }
       }
     }
@@ -195,6 +227,7 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
   }
   // Add the new faces to m[0];
   delete m[1];
+  save_mesh(m[0]);
   return m[0];
 }
 
@@ -229,9 +262,9 @@ Mesh *make_convex_hull(Points::iterator _begin, Points::iterator _end) {
   }
   std::nth_element(
       _begin, _begin + size / 2, _end,
-            [split_coord](const Geo::VectorD3 &_a, const Geo::VectorD3 &_b) {
-              return _a[split_coord] < _b[split_coord];
-            });
+      [split_coord](const Geo::VectorD3 &_a, const Geo::VectorD3 &_b) {
+        return _a[split_coord] < _b[split_coord];
+      });
   auto mid_iter = _begin + (_end - _begin) / 2;
   auto split_val =
       ((*mid_iter)[split_coord] + (*std::prev(mid_iter))[split_coord]) / 2.;
@@ -304,6 +337,14 @@ void Mesh::save(const char *_flnm) {
   auto last = std::unique(all_faces.begin(), all_faces.end());
   all_faces.erase(last, all_faces.end());
   for (auto &f : all_faces) {
-    cc << "f " << f[0] << ' ' << f[1] << ' ' << f[2] << std::endl;
+    cc << "f " << f[0] + 1 << ' ' << f[1] + 1 << ' ' << f[2] + 1 << std::endl;
   }
+}
+
+void save_mesh(Mesh *m) {
+  static int nn = 0;
+  auto prefix = std::to_string(nn++);
+  while (prefix.size() < 4)
+    prefix = std::string("0") + prefix;
+  m->save((prefix + "_mesh.obj").c_str());
 }
