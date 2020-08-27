@@ -63,9 +63,8 @@ TEST(CvxHull, Basic00) {
 
 TEST(CvxHull, Basic01) {
   set_test_output_directory_as_current();
-  Points pts{
-    {0, 0, 0}, {2, 0, 0}, {2, 1, 0}, {1, 1, 0}, {1, 2, 0},
-    {0, 0, 1}, {2, 0, 1}, {2, 1, 1}, {1, 1, 1}, {1, 2, 1}};
+  Points pts{{0, 0, 0}, {2, 0, 0}, {2, 1, 0}, {1, 1, 0}, {1, 2, 0}, {0, 2, 0},
+             {0, 0, 1}, {2, 0, 1}, {2, 1, 1}, {1, 1, 1}, {1, 2, 1}, {0, 2, 1}};
   auto mesh = make_convex_hull(pts);
   mesh->compact();
   save_mesh(mesh);

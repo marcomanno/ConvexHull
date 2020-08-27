@@ -35,7 +35,7 @@ struct Evaluator {
   Geo::VectorD3 get_center_point(const Geo::VectorD3 &_pt0,
                                  const Geo::VectorD3 &_pt1) {
     auto delta = _pt1[m_split_coord] - _pt0[m_split_coord];
-    double c = 0.5; 
+    double c = 0.5;
     if (fabs(delta) > 1e-16)
       c = (m_split_val - _pt0[m_split_coord]) / delta;
     Geo::VectorD3 center_pt;
@@ -50,7 +50,7 @@ struct Evaluator {
 
 static void replace_vertex(const Mesh *mm, size_t v0, size_t v1, size_t oth,
                            std::array<size_t, 2> &adj) {
-  const auto& orig = mm->m_vert_conn[v0].m_pt;
+  const auto &orig = mm->m_vert_conn[v0].m_pt;
   auto dir = mm->m_vert_conn[v1].m_pt - orig;
   dir /= Geo::length(dir);
   auto find_dir = [mm, &orig, &dir](size_t v) {
@@ -69,11 +69,11 @@ static void replace_vertex(const Mesh *mm, size_t v0, size_t v1, size_t oth,
     adj[1] = oth;
 }
 
-Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
+Mesh *merge(std::array<Mesh *, 2>& m, size_t split_coord, double split_val) {
   using Link = std::array<size_t, 2>;
   Link link{};
   Geo::VectorD3 p_mid_plane;
-  Evaluator ev(m[0]->m_box.mid(), m[1]->m_box.mid(), split_coord, split_val);
+  Evaluator ev(m[0]->m_mid_pt, m[1]->m_mid_pt, split_coord, split_val);
   {
     auto best_val = ev.evaluate(m[0]->m_vert_conn[link[0]].m_pt,
                                 m[1]->m_vert_conn[link[1]].m_pt, p_mid_plane);
@@ -146,7 +146,7 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
   };
   flag_on_boundary(true);
   std::vector<size_t> vertices_to_remove[2];
-  auto dir_centers = m[1]->m_box.mid() - m[0]->m_box.mid();
+  auto dir_centers = m[1]->m_mid_pt - m[0]->m_mid_pt;
   auto link_0 = new_links.begin();
   for (auto link_1 = std::next(link_0); link_1 != new_links.end();
        link_0 = link_1++) {
@@ -218,8 +218,11 @@ Mesh *merge(Mesh *m[2], size_t split_coord, double split_val) {
       adj += shif_index;
   }
   m[0]->m_box += m[1]->m_box;
+  m[0]->m_mid_pt = m[0]->m_mid_pt * static_cast<double>(m[0]->m_vert_conn.size()) +
+                   m[1]->m_mid_pt * static_cast<double>(m[1]->m_vert_conn.size());
   m[0]->m_vert_conn.insert(m[0]->m_vert_conn.end(), m[1]->m_vert_conn.begin(),
                            m[1]->m_vert_conn.end());
+  m[0]->m_mid_pt /= static_cast<double>(m[0]->m_vert_conn.size());
   for (auto &new_link : new_links) {
     new_link[1] += shif_index;
     m[0]->m_vert_conn[new_link[0]].m_adj_idx.push_back(new_link[1]);
@@ -239,11 +242,14 @@ Mesh *make_convex_hull(Points::iterator _begin, Points::iterator _end) {
       auto &el = m->m_vert_conn.emplace_back();
       el.m_pt = *_begin++;
       m->m_box += el.m_pt;
+      m->m_mid_pt += el.m_pt;
       for (auto j = size; j-- > 0;) {
         if (j != i)
           el.m_adj_idx.push_back(j);
       }
     }
+    m->m_mid_pt /= static_cast<double>(size);
+    save_mesh(m);
     return m;
   }
   Geo::Range<3> box;
@@ -269,8 +275,8 @@ Mesh *make_convex_hull(Points::iterator _begin, Points::iterator _end) {
   auto split_val =
       ((*mid_iter)[split_coord] + (*std::prev(mid_iter))[split_coord]) / 2.;
 
-  Mesh *m[2]{make_convex_hull(_begin, mid_iter),
-             make_convex_hull(mid_iter, _end)};
+  std::array<Mesh *, 2> m{make_convex_hull(_begin, mid_iter),
+                          make_convex_hull(mid_iter, _end)};
   return merge(m, split_coord, split_val);
 }
 
