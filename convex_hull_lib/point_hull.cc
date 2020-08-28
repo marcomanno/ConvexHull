@@ -34,12 +34,8 @@ struct Evaluator {
 
   Geo::VectorD3 get_center_point(const Geo::VectorD3 &_pt0,
                                  const Geo::VectorD3 &_pt1) {
-    auto delta = _pt1[m_split_coord] - _pt0[m_split_coord];
-    double c = 0.5;
-    if (fabs(delta) > 1e-16)
-      c = (m_split_val - _pt0[m_split_coord]) / delta;
-    Geo::VectorD3 center_pt;
-    center_pt = (1 - c) * _pt0 + c * _pt1;
+    auto center_pt = (_pt1 + _pt0) * .5;
+    center_pt[m_split_coord] = 0;
     return center_pt;
   }
 
@@ -48,8 +44,8 @@ struct Evaluator {
   Geo::VectorD3 m_center;
 };
 
-static void replace_vertex(const Mesh *mm, size_t v0, size_t v1, size_t oth,
-                           std::array<size_t, 2> &adj) {
+static size_t replace_vertex(Mesh *mm, size_t v0, size_t v1, size_t oth,
+                             std::array<size_t, 2> &adj) {
   const auto &orig = mm->m_vert_conn[v0].m_pt;
   auto dir = mm->m_vert_conn[v1].m_pt - orig;
   dir /= Geo::length(dir);
@@ -63,14 +59,83 @@ static void replace_vertex(const Mesh *mm, size_t v0, size_t v1, size_t oth,
   auto angle_ref = fabs(Geo::angle(adj0, adj1));
   auto angle_0 = fabs(Geo::angle(adj0, oth_v));
   auto angle_1 = fabs(Geo::angle(adj1, oth_v));
-  if (angle_0 > angle_1 && angle_0 > angle_ref)
-    adj[0] = oth;
-  else if (angle_1 > angle_0 && angle_1 > angle_ref)
+  size_t disconnect;
+  if (angle_0 > angle_1 && angle_0 > angle_ref) {
+    disconnect = adj[1];
     adj[1] = oth;
+  } else if (angle_1 > angle_0 && angle_1 > angle_ref) {
+    disconnect = adj[0];
+    adj[0] = oth;
+  } else
+    disconnect = oth;
+  return disconnect;
 }
 
-Mesh *merge(std::array<Mesh *, 2>& m, size_t split_coord, double split_val) {
-  using Link = std::array<size_t, 2>;
+using Link = std::array<size_t, 2>;
+
+static void remove_internal_links(Mesh *m, const std::vector<Link> &new_links) {
+  if (new_links.size() < 2)
+    return;
+  std::vector<Link> links_for_removal;
+  auto link_0 = std::prev(new_links.end());
+  for (auto link_1 = new_links.begin(); link_1 != new_links.end();
+       link_0 = link_1++) {
+    size_t mesh_idx;
+    if ((*link_0)[0] == (*link_1)[0])
+      mesh_idx = 1;
+    else if ((*link_0)[1] == (*link_1)[1])
+      mesh_idx = 0;
+    else
+      throw "Error";
+    size_t v0 = (*link_0)[mesh_idx];
+    size_t v1 = (*link_1)[mesh_idx];
+    std::array<size_t, 2> adj;
+    size_t cmn_verts = 0;
+    for (auto oth0 : m->m_vert_conn[v0].m_adj_idx) {
+      for (auto oth1 : m->m_vert_conn[v1].m_adj_idx) {
+        if (oth0 == oth1) {
+          if (cmn_verts < 2) {
+            adj[cmn_verts++] = oth1;
+            continue;
+          }
+          auto disconnect = replace_vertex(m, v0, v1, oth1, adj);
+          auto remove_link = [&m](std::array<size_t, 2> link) {
+            for (auto i : {0, 1}) {
+              auto &v_links = m->m_vert_conn[link[i]].m_adj_idx;
+              auto new_end =
+                  std::remove(v_links.begin(), v_links.end(), link[1 - i]);
+              v_links.erase(new_end, v_links.end());
+            }
+          };
+          auto add_link =
+              [&links_for_removal](const Link &link) {
+                links_for_removal.push_back(link);
+                if (links_for_removal.back()[0] > links_for_removal.back()[1])
+                  std::swap(links_for_removal.back()[0],
+                            links_for_removal.back()[1]);
+              };
+          add_link({disconnect, v0});
+          add_link({disconnect, v1});
+        }
+      }
+    }
+  }
+  if (links_for_removal.size() < 2)
+    return;
+  std::sort(links_for_removal.begin(), links_for_removal.end());
+  auto l0 = links_for_removal.begin();
+  for (auto l1 = std::next(l0); l1 != links_for_removal.end(); l0 = l1++) {
+    if (*l0 != *l1)
+      continue;
+    for (auto i : {0, 1}) {
+      auto &v_links = m->m_vert_conn[(*l1)[i]].m_adj_idx;
+      auto new_end = std::remove(v_links.begin(), v_links.end(), (*l1)[1 - i]);
+      v_links.erase(new_end, v_links.end());
+    }
+  }
+}
+
+Mesh *merge(std::array<Mesh *, 2> &m, size_t split_coord, double split_val) {
   Link link{};
   Geo::VectorD3 p_mid_plane;
   Evaluator ev(m[0]->m_mid_pt, m[1]->m_mid_pt, split_coord, split_val);
@@ -218,8 +283,9 @@ Mesh *merge(std::array<Mesh *, 2>& m, size_t split_coord, double split_val) {
       adj += shif_index;
   }
   m[0]->m_box += m[1]->m_box;
-  m[0]->m_mid_pt = m[0]->m_mid_pt * static_cast<double>(m[0]->m_vert_conn.size()) +
-                   m[1]->m_mid_pt * static_cast<double>(m[1]->m_vert_conn.size());
+  m[0]->m_mid_pt =
+      m[0]->m_mid_pt * static_cast<double>(m[0]->m_vert_conn.size()) +
+      m[1]->m_mid_pt * static_cast<double>(m[1]->m_vert_conn.size());
   m[0]->m_vert_conn.insert(m[0]->m_vert_conn.end(), m[1]->m_vert_conn.begin(),
                            m[1]->m_vert_conn.end());
   m[0]->m_mid_pt /= static_cast<double>(m[0]->m_vert_conn.size());
@@ -230,6 +296,8 @@ Mesh *merge(std::array<Mesh *, 2>& m, size_t split_coord, double split_val) {
   }
   // Add the new faces to m[0];
   delete m[1];
+  remove_internal_links(m[0], new_links);
+  m[0]->compact();
   save_mesh(m[0]);
   return m[0];
 }
